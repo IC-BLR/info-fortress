@@ -1,0 +1,28 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+__MACOSX/
+.AppleDouble
+.LSOverride
+
+# Zipped files
+*.zip
+
+# Environment variables
+.env
+
+# VS Code (optional)
+.vscode/
+
+# Logs
+*.log

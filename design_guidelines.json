@@ -1,0 +1,99 @@
+{
+  "mode": "dark",
+  "theme_strategy": "The Performance Pro (Tactical/National Security)",
+  "typography": {
+    "font_family_heading": "Barlow Condensed, sans-serif",
+    "font_family_body": "Inter, sans-serif",
+    "font_family_code": "JetBrains Mono, monospace",
+    "heading_styles": {
+      "h1": "text-4xl font-bold tracking-tight text-white uppercase",
+      "h2": "text-2xl font-semibold tracking-tight text-zinc-100 uppercase",
+      "h3": "text-xl font-medium text-zinc-200"
+    },
+    "body_styles": {
+      "base": "text-sm text-zinc-400 leading-relaxed",
+      "small": "text-xs text-zinc-500"
+    }
+  },
+  "colors": {
+    "background": {
+      "default": "bg-zinc-950",
+      "card": "bg-zinc-900/50",
+      "sidebar": "bg-zinc-950 border-r border-zinc-800"
+    },
+    "text": {
+      "primary": "text-zinc-50",
+      "secondary": "text-zinc-400",
+      "muted": "text-zinc-500"
+    },
+    "accents": {
+      "risk_high": "text-red-500 bg-red-500/10 border-red-500/20",
+      "risk_medium": "text-amber-500 bg-amber-500/10 border-amber-500/20",
+      "safe": "text-emerald-500 bg-emerald-500/10 border-emerald-500/20",
+      "ai_analysis": "text-violet-500 bg-violet-500/10 border-violet-500/20",
+      "official": "text-blue-500 bg-blue-500/10 border-blue-500/20"
+    },
+    "borders": {
+      "default": "border-zinc-800",
+      "highlight": "border-zinc-700"
+    }
+  },
+  "layout": {
+    "grid_system": "Bento Grid Mode B (High Density)",
+    "container_padding": "p-6 md:p-8",
+    "gap_size": "gap-4 md:gap-6",
+    "border_radius": "rounded-sm"
+  },
+  "components": {
+    "cards": {
+      "style": "bg-zinc-900/50 backdrop-blur-sm border border-zinc-800/60 shadow-sm",
+      "hover": "hover:bg-zinc-900 hover:border-zinc-700 transition-all duration-200"
+    },
+    "buttons": {
+      "primary": "bg-white text-zinc-950 hover:bg-zinc-200 font-semibold rounded-sm px-4 py-2 text-sm shadow-[0_0_10px_rgba(255,255,255,0.1)]",
+      "secondary": "bg-zinc-800 text-white hover:bg-zinc-700 font-medium rounded-sm px-4 py-2 text-sm border border-zinc-700",
+      "danger": "bg-red-900/20 text-red-500 border border-red-900/50 hover:bg-red-900/40"
+    },
+    "inputs": {
+      "style": "bg-zinc-950 border border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus:ring-1 focus:ring-zinc-700 rounded-sm"
+    }
+  },
+  "visual_enhancers": {
+    "glassmorphism": "backdrop-blur-md bg-zinc-950/70 border-b border-white/5",
+    "grid_lines": "bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]",
+    "glow_effects": "shadow-[0_0_20px_-5px_rgba(var(--color),0.3)]"
+  },
+  "image_assets": {
+    "hero_network": "https://images.unsplash.com/photo-1670182088755-48d7171e5e44?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "cluster_viz": "https://images.unsplash.com/photo-1738082956220-a1f20a8632ce?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "threat_lock": "https://images.unsplash.com/photo-1614064642261-3ccbfafa481b?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "official_docs": "https://images.unsplash.com/photo-1584456644237-c41401a79699?crop=entropy&cs=srgb&fm=jpg&q=85"
+  },
+  "charts_and_viz": {
+    "libraries": ["Recharts", "Lucide React", "Framer Motion"],
+    "narrative_risk_index": "Gauge/RadialBar Chart (0-100 Scale)",
+    "amplification_network": "Force Directed Graph (Nodes = Users, Edges = Retweets)",
+    "velocity_tracking": "Area Chart (Gradient Fill)",
+    "claim_clustering": "Scatter Plot or Bubble Chart"
+  },
+  "universal_guidelines": [
+    "Always use 'dark' class on the html element or body.",
+    "Do not use gradients for backgrounds, use solid Zinc-950 + subtle noise or grid lines.",
+    "Text contrast is critical. Headings must be White or Zinc-100.",
+    "Interactive elements must have a :hover state that is distinct.",
+    "Use 'data-testid' on all interactive elements.",
+    "Use Lucide-React icons. Stroke width 1.5px for elegance.",
+    "No rounded-xl or rounded-2xl. Use rounded-sm or rounded-md for a 'tactical' look.",
+    "Animation: Use Framer Motion for entrance animations (fade-in, slide-up). Stagger children."
+  ],
+  "instructions_to_main_agent": [
+    "Install 'lucide-react', 'recharts', 'framer-motion', 'clsx', 'tailwind-merge' if not present.",
+    "Install fonts: Barlow Condensed (Headings), Inter (Body), JetBrains Mono (Code).",
+    "Create a Layout wrapper that enforces the Dark Mode and Sidebar structure.",
+    "For the 'Narrative Risk Index', create a custom component using Recharts RadialBar.",
+    "Use the 'grid_lines' class in the visual_enhancers section for the Dashboard background.",
+    "Layer 1 (Official) should look like a document scanner/analyzer.",
+    "Layer 2 (Public) should look like a social media feed + analytics center.",
+    "Layer 3 (Resilience) should look like a high-level strategic map."
+  ]
+}

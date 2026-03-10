@@ -180,6 +180,7 @@ async def _call_ollama(model: str, messages: list[dict], timeout: float) -> str:
         "model": model,
         "messages": messages,
         "stream": False,
+        "format": "json",
         "options": {
             # Ensure enough tokens to complete full JSON.
             # llama3.2 default is 2048 ctx; analysis JSON needs ~800 output tokens.
@@ -257,6 +258,7 @@ async def guarded_ollama_chat(
              {"role": "user",   "content": user_message}],
             MAIN_TIMEOUT,
         )
+        print(f"[DBG] main model returned chars={len(content)} tail={content[-200:]!r}", flush=True)
         return GuardrailsResult(content=content, input_verdict="skipped", output_verdict="skipped")
 
     # ── Stage 1: Input screening ────────────────

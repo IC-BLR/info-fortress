@@ -5,6 +5,10 @@ Backend: Ollama (llama3.2) + Llama Guard 3 + DuckDB
 All data is real — no mocks. Every analysis is performed live by the LLM.
 """
 
+#from turtle import title
+
+from unittest import result
+
 from fastapi import FastAPI, APIRouter, HTTPException, Query
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -21,6 +25,8 @@ import re
 import httpx
 import asyncio
 from urllib.parse import urlparse, urljoin
+from bs4 import BeautifulSoup
+
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -137,7 +143,7 @@ class ClaimAnalysisRequest(BaseModel):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CREDIBLE-SOURCE REGISTRY
+# CREDIBLE/SATIRE-SOURCE REGISTRY
 # ══════════════════════════════════════════════════════════════════════════════
 
 CREDIBLE_NEWS_SOURCES = {
@@ -153,7 +159,11 @@ CREDIBLE_NEWS_SOURCES = {
     "time.com", "newsweek.com", "usatoday.com", "latimes.com",
     "thewire.in", "caravan magazine.in", "livemint.com", "business-standard.com",
 }
-
+KNOWN_SATIRE_SOURCES = {
+    "theonion.com", "babylonbee.com", "reductress.com",
+    "thebeaverton.com", "waterfordwhispersnews.com", "newsthump.com",
+    "thedailymash.co.uk", "thespoof.com", "clickhole.com",
+}
 
 def is_credible_source(url: str) -> tuple[bool, str]:
     try:
@@ -165,6 +175,15 @@ def is_credible_source(url: str) -> tuple[bool, str]:
     except Exception:
         return False, "unknown"
 
+def is_satire_source(url: str) -> tuple[bool, str]:
+    try:
+        domain = urlparse(url).netloc.lower().replace("www.", "")
+        for src in KNOWN_SATIRE_SOURCES:
+            if domain == src or domain.endswith("." + src):
+                return True, domain
+        return False, domain
+    except Exception:
+        return False, "unknown"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ARTICLE FETCHER  — multi-strategy extraction
@@ -185,122 +204,376 @@ _FETCH_HEADERS = {
 }
 
 
-def _clean_html(html: str) -> str:
-    """Strip boilerplate HTML sections."""
-    for tag in ("script", "style", "nav", "header", "footer",
-                "aside", "form", "iframe", "noscript", "svg"):
-        html = re.sub(rf"<{tag}[^>]*>.*?</{tag}>", " ", html,
-                      flags=re.DOTALL | re.IGNORECASE)
-    return html
-
-
-def _extract_meta(html: str, prop: str) -> str:
-    """Extract og: or name= meta content."""
-    for pattern in [
-        rf'<meta[^>]+property=["\']og:{prop}["\'][^>]+content=["\']([^"\']+)["\']',
-        rf'<meta[^>]+name=["\']{prop}["\'][^>]+content=["\']([^"\']+)["\']',
-        rf'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:{prop}["\']',
-        rf'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']{prop}["\']',
-    ]:
-        m = re.search(pattern, html, re.IGNORECASE)
-        if m:
-            return m.group(1).strip()
-    return ""
-
-
-def _extract_body_text(html: str) -> str:
+def _is_js_rendered(html: str) -> bool:
     """
-    Multi-strategy body text extraction (ordered by quality):
-    1. <article> tag content
-    2. Common content div heuristics
-    3. All <p> tags
+    Returns True if the page looks like a JS shell with no real content.
+    Detects common JS-framework empty root divs and checks visible text length.
     """
-    clean = _clean_html(html)
+    soup = BeautifulSoup(html, "html.parser")
 
-    # Strategy 1: <article> block
-    art = re.search(r"<article[^>]*>(.*?)</article>", clean, re.DOTALL | re.IGNORECASE)
-    if art:
-        text = re.sub(r"<[^>]+>", " ", art.group(1))
-        text = " ".join(text.split())
-        if len(text) > 200:
-            return text[:8000]
+    # Hard signals: common JS framework root divs with no children text
+    js_markers = [
+        soup.find("div", id="__next"),   # Next.js
+        soup.find("div", id="app"),      # Vue / React
+        soup.find("div", id="root"),     # React CRA
+    ]
+    for marker in js_markers:
+        if marker and len(marker.get_text(strip=True)) < 100:
+            logger.info("[JS-detect] Found empty JS framework root — needs Playwright")
+            return True
 
-    # Strategy 2: common content wrapper divs
-    for cls in ("article-body", "article__body", "story-body", "post-content",
-                "entry-content", "content-body", "main-content", "article-content"):
-        div = re.search(
-            rf'<(?:div|section)[^>]*(?:id|class)=["\'][^"\']*{cls}[^"\']*["\'][^>]*>(.*?)</(?:div|section)>',
-            clean, re.DOTALL | re.IGNORECASE
+    # Remove script/style/meta/link/noscript, then measure real text
+    for tag in soup(["script", "style", "meta", "link", "noscript"]):
+        tag.decompose()
+
+    visible_text = re.sub(r"\s+", " ", soup.get_text(separator=" ", strip=True)).strip()
+    logger.info(f"[JS-detect] Visible text length after strip: {len(visible_text)}")
+
+    # Less than 500 chars of real text = likely a JS shell
+    return len(visible_text) < 500
+
+
+def _parse_html_bs4(html: str, base_url: str) -> Dict[str, Any]:
+    """
+    Parse article HTML with BeautifulSoup using multi-strategy content extraction.
+    Returns dict with: title, content, image_count, source_count, sources.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    # ── DEBUG: Raw HTML snapshot ──────────────────────────────────────────────
+    print("\n" + "=" * 60)
+    print(f"[DEBUG] Total raw HTML length: {len(html)}")
+    #print(f"[DEBUG] First 500 chars of raw HTML:\n{html[:500]}")
+    print("=" * 60)
+
+    # Remove noise tags
+    for tag in soup(["script", "style", "nav", "footer", "header",
+                     "aside", "form", "noscript", "iframe"]):
+        tag.decompose()
+
+    # ── DEBUG: After stripping noise ─────────────────────────────────────────
+    all_text_after_strip = soup.get_text(separator=" ", strip=True)
+    #print(f"\n[DEBUG] Visible text length after stripping noise tags: {len(all_text_after_strip)}")
+    #print(f"[DEBUG] First 300 chars of visible text:\n{all_text_after_strip[:300]}")
+
+    # ── DEBUG: All tags present ───────────────────────────────────────────────
+    all_tags = set(tag.name for tag in soup.find_all())
+    print(f"\n[DEBUG] Tags present in cleaned HTML: {sorted(all_tags)}")
+
+    # ── DEBUG: All classes present ────────────────────────────────────────────
+    all_classes: set = set()
+    for tag in soup.find_all(class_=True):
+        for c in tag.get("class", []):
+            all_classes.add(c)
+    #print(f"\n[DEBUG] All CSS classes found ({len(all_classes)} total):")
+    content_related = [c for c in sorted(all_classes) if any(
+        kw in c.lower() for kw in ["article", "story", "content", "live",
+                                    "blog", "body", "main", "text", "post"]
+    )]
+    #print(f"  Content-related classes: {content_related}")
+    #print(f"  All classes (first 80): {sorted(all_classes)[:80]}")
+
+    # ── DEBUG: All IDs present ────────────────────────────────────────────────
+    all_ids = [tag.get("id") for tag in soup.find_all(id=True)]
+    #print(f"\n[DEBUG] All IDs found ({len(all_ids)} total): {all_ids[:40]}")
+
+    # ── TITLE ─────────────────────────────────────────────────────────────────
+    h1_tag     = soup.find("h1")
+    og_title   = soup.find("meta", property="og:title")
+    page_title = soup.find("title")
+
+# Span/div headline fallback — many sites style their article title in a
+# <span> or <div> with a class containing "title", "headline" or "heading"
+    span_title = soup.find(
+        ["span", "div"],
+        class_=re.compile(r"title|headline|heading", re.I)
+    )
+
+    #print(f"\n[DEBUG] h1 tag: {h1_tag}")
+    #print(f"[DEBUG] og:title meta: {og_title}")
+    #print(f"[DEBUG] <title> tag: {page_title}")
+    #print(f"[DEBUG] span/div title fallback: {span_title}")
+
+    title = ""
+    if h1_tag:
+        title = h1_tag.get_text(strip=True)
+    elif og_title:
+        title = og_title.get("content", "")
+    elif span_title:
+        title = span_title.get_text(strip=True)
+    elif page_title:
+        title = page_title.get_text(strip=True)
+    title = title or "Title not found"
+    print(f"[DEBUG] Final title chosen: '{title}'")
+
+    # ── CONTENT ───────────────────────────────────────────────────────────────
+    content_selectors = [
+        "article",
+        {"class": re.compile(r"liveblog|live[-_]blog|live[-_]feed", re.I)},
+        {"class": re.compile(
+            r"article[-_]body|story[-_]body|post[-_]content|entry[-_]content"
+            r"|article[-_]content|articleContent|storyContent", re.I)},
+        {"id": re.compile(r"article[-_]body|story[-_]body|articleContent|storyContent|liveblog", re.I)},
+        "main",
+        {"role": "main"},
+    ]
+    content_el = None
+    print(f"\n[DEBUG] Trying content selectors:")
+    for sel in content_selectors:
+        if isinstance(sel, str):
+            found = soup.find(sel)
+        else:
+            found = soup.find(True, sel)
+        print(f"  Selector {sel!r} → {'FOUND: ' + str(found)[:80] if found else 'not found'}")
+        if found and not content_el:
+            content_el = found
+
+    if content_el:
+        #print(f"\n[DEBUG] Content element tag: <{content_el.name}> "
+        #      f"class={content_el.get('class')} id={content_el.get('id')}")
+        print(f"[DEBUG] Content element text length: {len(content_el.get_text(strip=True))}")
+    else:
+        print(f"\n[DEBUG] No content element matched — falling back to <body>")
+        if soup.body:
+            children = [
+                f"<{c.name} class={c.get('class', '')!r} id={c.get('id', '')!r}>"
+                for c in soup.body.children if hasattr(c, 'name') and c.name
+            ]
+            print(f"[DEBUG] Body direct children: {children[:20]}")
+
+    raw_content = (content_el or soup.body or soup).get_text(separator="\n", strip=True)
+    content = re.sub(r"\n{3,}", "\n\n", raw_content).strip()
+    print(f"\n[DEBUG] Final content length: {len(content)}")
+    #print(f"[DEBUG] First 300 chars of content:\n{content[:300]}")
+
+    # ── IMAGES ────────────────────────────────────────────────────────────────
+    all_imgs = soup.find_all("img")
+    print(f"\n[DEBUG] Total <img> tags found: {len(all_imgs)}")
+    images = []
+    for img in all_imgs:
+        src = img.get("src", "") or img.get("data-src", "") or img.get("data-lazy-src", "")
+        width  = int(img.get("width",  0) or 0)
+        height = int(img.get("height", 0) or 0)
+        print(f"  IMG src={src[:60]!r} w={width} h={height}")
+        if width and height and (width < 50 or height < 50):
+            continue
+        if any(x in src.lower() for x in ["pixel", "tracker", "1x1", "beacon"]):
+            continue
+        if src:
+            images.append(src)
+    print(f"[DEBUG] Images after filtering: {len(images)}")
+
+    # ── EXTERNAL SOURCES ──────────────────────────────────────────────────────
+    base_origin = urlparse(base_url).netloc
+    all_anchors = soup.find_all("a", href=True)
+    print(f"\n[DEBUG] Total <a href> tags found: {len(all_anchors)}")
+    seen: set = set()
+    external_links = []
+    for a in all_anchors:
+        href = a["href"]
+        try:
+            abs_url = urljoin(base_url, href)
+            parsed  = urlparse(abs_url)
+            if parsed.scheme not in ("http", "https"):
+                continue
+            if parsed.netloc == base_origin or parsed.netloc == "":
+                continue
+            if abs_url not in seen:
+                seen.add(abs_url)
+                external_links.append(abs_url)
+        except Exception:
+            continue
+    print(f"[DEBUG] External unique links found: {len(external_links)}")
+    if external_links:
+        print(f"[DEBUG] First 5 external links: {external_links[:5]}")
+    print("=" * 60 + "\n")
+
+    return {
+        "title":        title[:300],
+        "content":      content[:8000],
+        "image_count":  len(images),
+        "source_count": len(external_links),
+        "sources":      external_links[:15],
+    }
+
+
+async def _fetch_html_httpx(url: str) -> str:
+    """Primary fetch: fast httpx with manual decompression fallback."""
+    # Request identity to avoid compressed responses; httpx may still get them
+    headers = {**_FETCH_HEADERS, "Accept-Encoding": "identity"}
+
+    async with httpx.AsyncClient(
+        headers=headers,
+        follow_redirects=True,
+        timeout=20.0,
+        verify=False,
+    ) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+
+        content_bytes = resp.content
+        # Detect binary/compressed response despite identity request
+        if len(content_bytes) > 2 and content_bytes[0] in (0x1f, 0x78, 0xce, 0x28):
+            logger.info("[httpx] Response appears compressed — attempting manual decompress")
+            for label, decompress_fn in [
+                ("gzip",   lambda b: __import__("gzip").decompress(b)),
+                ("brotli", lambda b: __import__("brotli").decompress(b)),
+                ("zlib",   lambda b: __import__("zlib").decompress(b, -15)),
+            ]:
+                try:
+                    text = decompress_fn(content_bytes).decode("utf-8", errors="replace")
+                    logger.info(f"[httpx] {label} decompress succeeded, length={len(text)}")
+                    return text
+                except Exception:
+                    continue
+            raise ValueError("Response is compressed binary and could not be decompressed")
+
+        text = resp.text
+        logger.info(f"[httpx] Plain text response, length={len(text)}, starts: {text[:80]!r}")
+        return text
+
+
+async def _fetch_html_playwright(url: str) -> str:
+    """Fallback fetch: full browser rendering via Playwright."""
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        raise RuntimeError(
+            "Playwright not installed. Run: pip install playwright && playwright install chromium"
         )
-        if div:
-            text = re.sub(r"<[^>]+>", " ", div.group(1))
-            text = " ".join(text.split())
-            if len(text) > 200:
-                return text[:8000]
 
-    # Strategy 3: all paragraphs
-    paras = re.findall(r"<p[^>]*>(.*?)</p>", clean, re.DOTALL | re.IGNORECASE)
-    text = " ".join(re.sub(r"<[^>]+>", " ", p) for p in paras)
-    text = " ".join(text.split())
-    return text[:8000] if text else ""
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(
+            user_agent=_FETCH_HEADERS["User-Agent"],
+            java_script_enabled=True,
+            viewport={"width": 1280, "height": 800},
+            locale="en-US",
+        )
+        page = await context.new_page()
+
+        # Block heavy assets to speed up load
+        await page.route(
+            "**/*.{png,jpg,jpeg,gif,webp,svg,woff,woff2,ttf,mp4,mp3}",
+            lambda route: route.abort()
+        )
+
+        logger.info(f"[Playwright] Navigating to {url}")
+        await page.goto(url, wait_until="domcontentloaded", timeout=40000)
+
+        # Wait for meaningful content via common article selectors
+        for sel in ["article", "h1", '[class*="article"]', '[class*="story"]',
+                    '[class*="liveblog"]', '[class*="live-blog"]', "main"]:
+            try:
+                await page.wait_for_selector(sel, timeout=5000)
+                logger.info(f"[Playwright] Found selector: {sel}")
+                break
+            except Exception:
+                continue
+
+        await asyncio.sleep(3)   # allow JS hydration to settle
+        html = await page.content()
+        await browser.close()
+        logger.info(f"[Playwright] Got HTML length: {len(html)}")
+        return html
 
 
 async def fetch_article(url: str) -> Dict[str, Any]:
     """
     Fetch a URL and extract structured article content.
-    Returns a dict with keys: success, title, description, author,
-    published_date, content, word_count, url, error.
+
+    Fetch strategy (in order):
+      1. httpx  — fast, no JS execution.
+      2. If the page looks JS-rendered or httpx fails → Playwright full browser.
+
+    Parse strategy: BeautifulSoup with multi-selector content extraction,
+    including <article>, common content-wrapper class/id heuristics, and
+    full <p> fallback.
+
+    Returns a dict with keys:
+      success, title, description, author, published_date, content,
+      word_count, url, error, method_used, image_count, source_count, sources.
     """
-    print(f"[FETCH] Start fetch_article url={url}")
+    print(f"[FETCH] Start fetch_article") #url={url}
+    html: Optional[str] = None
+    method_used = "httpx+BeautifulSoup"
+
+    # ── Stage 1: httpx ────────────────────────────────────────────────────────
     try:
-        async with httpx.AsyncClient(
-            headers=_FETCH_HEADERS, timeout=20.0,
-            follow_redirects=True, verify=False
-        ) as client:
-            resp = await client.get(url)
-            print(f"[FETCH] HTTP status={resp.status_code} url={url}")
-            resp.raise_for_status()
-            html = resp.text
-        
-        # print("Line number 265:", html)
-        title_m = re.search(r"<title[^>]*>([^<]+)</title>", html, re.IGNORECASE)
-        # print("Line number 267:", title_m)
-        raw_title = title_m.group(1).strip() if title_m else ""
-        title = _extract_meta(html, "title") or raw_title or "Untitled"
+        html = await _fetch_html_httpx(url)
+        if _is_js_rendered(html):
+            logger.info("[FETCH] JS-rendered page detected — switching to Playwright")
+            html = None   # discard and fall through to Playwright
+    except Exception as e:
+        logger.info(f"[FETCH] httpx failed ({e}) — trying Playwright")
 
-        description = _extract_meta(html, "description") or ""
-        author = _extract_meta(html, "author") or ""
-        published = _extract_meta(html, "article:published_time") or \
-                    _extract_meta(html, "pubdate") or ""
+    # ── Stage 2: Playwright fallback ──────────────────────────────────────────
+    if html is None:
+        method_used = "Playwright+BeautifulSoup"
+        try:
+            html = await _fetch_html_playwright(url)
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Both httpx and Playwright failed: {e}",
+                "url": url,
+                "title": "", "description": "", "author": "",
+                "published_date": "", "content": "", "word_count": 0,
+            }
 
-        body = _extract_body_text(html)
-        print("Line number 277:", title, description, author, published, len(body))
+    print(f"[FETCH] HTML acquired via {method_used}, length={len(html)}")
 
-        # Fallback: use description + title if body is too thin
-        if len(body) < 150:
-            body = f"{description}"
-            print(f"[FETCH] Thin body extracted len={len(body)} url={url}")
-
+    # ── Stage 3: BeautifulSoup parse ─────────────────────────────────────────
+    try:
+        parsed = _parse_html_bs4(html, url)
+    except Exception as e:
         return {
-            "success": True,
-            "title": title[:300],
-            "description": description[:500],
-            "author": author,
-            "published_date": published,
-            "content": body,
-            "word_count": len(body.split()),
+            "success": False,
+            "error": f"HTML parse failed: {e}",
             "url": url,
-            "error": None,
+            "title": "", "description": "", "author": "",
+            "published_date": "", "content": "", "word_count": 0,
         }
 
-    except httpx.HTTPStatusError as e:
-        return {"success": False, "error": f"HTTP {e.response.status_code}", "url": url,
-                "title": "", "description": "", "author": "", "published_date": "",
-                "content": "", "word_count": 0}
-    except Exception as e:
-        return {"success": False, "error": str(e), "url": url,
-                "title": "", "description": "", "author": "", "published_date": "",
-                "content": "", "word_count": 0}
+    # ── Extract og:/meta fields (fresh soup — noise already stripped inside parse) ──
+    meta_soup = BeautifulSoup(html, "html.parser")
+
+    def _meta(prop: str) -> str:
+        for attr, val in [("property", f"og:{prop}"), ("name", prop)]:
+            tag = meta_soup.find("meta", {attr: val})
+            if tag and tag.get("content"):
+                return tag["content"].strip()
+        return ""
+
+    description    = _meta("description")
+    author         = _meta("author")
+    published_date = _meta("article:published_time") or _meta("pubdate")
+
+    content = parsed["content"]
+
+    # Fallback: if body extraction was thin, use description
+    if len(content) < 150:
+        content = description
+        #print(f"[FETCH] Thin body — falling back to og:description, len={len(content)}")
+
+    #print(f"[FETCH] Done: title={parsed['title']!r} words={len(content.split())} "
+    #      f"method={method_used}")
+
+    return {
+        "success":        True,
+        "title":          parsed["title"],
+        "description":    description[:500],
+        "author":         author,
+        "published_date": published_date,
+        "content":        content,
+        "word_count":     len(content.split()),
+        "url":            url,
+        "error":          None,
+        "method_used":    method_used,
+        "image_count":    parsed["image_count"],
+        "source_count":   parsed["source_count"],
+        "sources":        parsed["sources"],
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -379,11 +652,12 @@ Return ONLY this JSON object:
 }}"""
 
     result = await guarded_ollama_chat(system_msg, user_msg)
-
+    
     if isinstance(result, GuardrailsViolation):
-        print(f"[L1] LLM blocked stage={result.stage} cats={result.categories}")
+        print(f"[644] LLM blocked stage={result.stage} cats={result.categories} msg={result.message}")
     else:
-        logger.debug(f"[L1] LLM output chars={len(result.content)} preview={result.content[:200]!r}")
+        print(f"[RISK-DEBUG][646] Raw LLM content length={len(result.content)}")
+        print(f"[647] LLM output chars={len(result.content)} preview={result.content[:200]!r}")
 
     if isinstance(result, GuardrailsViolation):
         print("Guard blocked document analysis: %s", result.message)
@@ -401,8 +675,12 @@ Return ONLY this JSON object:
     parsed = _parse_json(result.content)
     if parsed:
         parsed["guardrails_passed"] = True
+        print(f"[RISK-DEBUG][665] risk_score in parsed: {parsed.get('risk_score', 'KEY MISSING')}")
+        print(f"[RISK-DEBUG][666] veracity_assessment: {parsed.get('veracity_assessment', 'KEY MISSING')}")
         return parsed
-
+    else:
+        print(f"[RISK-DEBUG][667] _parse_json returned None — JSON parse FAILED")
+        print(f"[RISK-DEBUG][668] Raw text that failed to parse:\n{result.content}")
     # LLM returned non-JSON — return raw with flag
     return {
         "risk_score": 0, "fabrication_detected": False, "fabrication_details": None,
@@ -423,25 +701,28 @@ async def analyze_url_with_ai(
     source_domain: str,
 ) -> Dict[str, Any]:
     """Full misinformation analysis of a fetched article/URL."""
-
+    is_satire, _ = is_satire_source(article["url"])
     # ── Build credibility context ─────────────────────────────────────────
     if is_credible:
         credibility_note = (
-            f"SOURCE VERDICT: {source_domain} is a VERIFIED CREDIBLE NEWS OUTLET. "
-            "Standard breaking-news journalism from this source (accident reports, crime reports, "
-            "weather events, political announcements) is factual reporting — NOT manipulation. "
-            "A road accident killing multiple people is a routine, tragic news event. "
-            "ONLY flag manipulation_indicators if you find a concrete rhetorical device "
-            "designed to deceive (e.g. fabricated quotes, false statistics, deliberate omission "
-            "to mislead). An empty list [] is the CORRECT answer when none are present. "
-            "DO NOT invent manipulation indicators for normal journalism."
-        )
+        f"SOURCE VERDICT: {source_domain} is a VERIFIED CREDIBLE NEWS OUTLET. "
+        "Standard breaking-news journalism is factual reporting — NOT manipulation. "
+        "ONLY flag manipulation_indicators if you find a concrete rhetorical device "
+        "designed to deceive. An empty list [] is correct when none are present."
+    )
+    elif source_domain in KNOWN_SATIRE_SOURCES:
+        credibility_note = (
+        f"SOURCE VERDICT: {source_domain} is a KNOWN SATIRE/PARODY OUTLET. "
+        "Content is intentionally fictional and humorous, NOT factual reporting. "
+        "risk_score should reflect how dangerous this content is if mistaken for "
+        "real news — minimum 35, higher if the claims could easily fool readers."
+    )
     else:
         credibility_note = (
-            f"SOURCE VERDICT: {source_domain} is NOT in the verified credible-source registry. "
-            "Apply careful scrutiny, but still base every finding on evidence in the text."
-        )
-    print("Line number 444:", is_credible, credibility_note)
+        f"SOURCE VERDICT: {source_domain} is NOT in the verified credible-source registry. "
+        "Apply careful scrutiny, but still base every finding on evidence in the text."
+    )
+    print("Line number 726:", is_credible, credibility_note)
 
     content_block = (
         f"TITLE: {article['title']}\n"
@@ -452,25 +733,47 @@ async def analyze_url_with_ai(
     )
 
     system_msg = """You are a senior fact-checker at an international wire agency.
-Your job is to assess whether a piece of content contains ACTUAL misinformation,
-not to manufacture concerns about ordinary journalism.
+Your job is to produce a nuanced, evidence-based risk score for every piece of content.
 
-HARD RULES — read carefully:
-1. Breaking news from established outlets reporting accidents, crimes, deaths, weather,
-   elections, or political events is FACTUAL REPORTING by default.
+RISK SCORE SCALE — use the full 0-100 range:
+- 0-15:  Verified factual reporting. Named official sources, cross-verified facts,
+         credible outlet, no manipulative framing.
+- 16-30: Mostly reliable. Minor gaps in sourcing or slightly sensational headline
+         but core claims are factual and verifiable.
+- 31-45: Mixed reliability. Some unverified claims, anonymous sources only,
+         opinion presented alongside facts, or minor factual inaccuracies.
+- 46-60: Questionable. Multiple unverified claims, misleading framing, missing
+         critical context, or content from an unverified source with no corroboration.
+- 61-75: Likely problematic. Demonstrably false claims, heavy emotional manipulation,
+         fabricated quotes, or satire/parody that could easily be mistaken for real news.
+- 76-90: High risk. Deliberate misinformation, conspiracy content, fabricated evidence,
+         or content designed to deceive with specific harmful intent.
+- 91-100: Critical. Dangerous health/safety misinformation, incitement, or content
+          that is both demonstrably false AND likely to cause direct harm if believed.
+
+CONTENT TYPE SCORING GUIDANCE:
+- Breaking news from credible outlet with named official source: 5-20
+- Breaking news from credible outlet, anonymous sources only: 20-35
+- News from unverified outlet, claims plausible and internally consistent: 35-50
+- News from unverified outlet, claims unverifiable or inconsistent: 50-65
+- Clearly labelled satire/parody on known satire site: 40-55
+- Satire that could plausibly be mistaken for real news: 60-75
+- Opinion or analysis piece, clearly labelled: 25-45
+- Content making specific false factual claims with evidence: 70-90
+- Health/safety misinformation or incitement content: 85-100
+
+HARD RULES:
+1. You MUST pick a specific integer, not just 0 or 100. Reserve 0 for content
+   that is fully verified by multiple named official sources. Reserve 100 only
+   for content that is both demonstrably false AND poses immediate safety risk.
 2. "manipulation_indicators" must list CONCRETE deceptive techniques found verbatim
-   in the text (e.g. "falsely attributes quote to PM Modi", "statistic contradicts
-   official data"). If you cannot cite a specific example, the list MUST be empty [].
-3. "emotional_language" means words chosen TO MANIPULATE (propaganda terms, slurs,
-   fear-mongering). Words that are naturally emotional because the subject matter is
-   tragic (killed, died, crashed, victims) are NOT manipulation — they are accurate
-   descriptions. Do NOT list them.
-4. risk_score for a credible-outlet breaking-news accident/crime report with a named
-   police/official source should be 0-25. Scores above 40 require specific quoted
-   evidence from the text.
-5. Your training data has a cutoff date. Recent events you have not heard of are NOT
-   automatically false or unverified.
-6. Respond with ONLY valid JSON — no markdown fences, no explanation outside JSON."""
+   in the text. If you cannot cite a specific example, return [].
+3. "emotional_language" means words chosen TO MANIPULATE — propaganda terms, slurs,
+   deliberate fear-mongering. Words like "killed", "died", "crash" are factual
+   descriptions, NOT emotional triggers. Do NOT list them.
+4. Your training data has a cutoff date. Recent events you have not heard of are NOT
+   automatically false.
+5. Respond with ONLY valid JSON — no markdown fences, no explanation outside JSON."""
 
     # Keep the article snippet short so the LLM has enough token budget for the JSON response
     article_snippet = article["content"][:3000]
@@ -555,7 +858,7 @@ Return this JSON:
         }
 
     result = await guarded_ollama_chat(system_msg, user_msg)
-    print(f"[DEBUG] LLM result type: {result}")
+    print(f"[DEBUG][823] LLM result type: {result}")
 
     base = {
         "url": article["url"],
@@ -599,16 +902,19 @@ Return this JSON:
     # producing nonsense values. We detect this and fall back to safe defaults.
     def _is_valid_parse(p: dict) -> bool:
         if not isinstance(p, dict):
+            print(f"[RISK-DEBUG][873] _is_valid_parse FAIL: not a dict, got {type(p)}")
             return False
         # Must have a numeric risk_score
         try:
             float(p.get("risk_score", "x"))
         except (TypeError, ValueError):
+            print(f"[RISK-DEBUG][873] _is_valid_parse FAIL: risk_score not numeric, value={p.get('risk_score')!r}")
             return False
         # Must have a non-empty veracity string that is one of the expected values
         valid_veracity = {"verified", "likely_true", "uncertain", "likely_false",
                           "false", "requires_context", "blocked"}
         if p.get("veracity_assessment", "") not in valid_veracity:
+            print("Line number 896: veracity_assessment: " , p.get("veracity_assessment"))
             return False
         # All list fields must actually be lists (not strings / None)
         for key in ("claims", "manipulation_indicators", "emotional_language",
@@ -647,6 +953,7 @@ Return this JSON:
             parsed["risk_score"] = max(parsed.get("risk_score", 0), 100)
             parsed["recommended_action"] = "do_not_share"
             parsed["guardrails_blocked"] = True
+            print(f"[Risk_Debug][918]  Final risk_score: {parsed.get("risk_score")}")
         return {**base, **parsed, "guardrails_passed": True}
 
     # Log raw response for debugging
@@ -687,28 +994,46 @@ Return this JSON:
 async def analyze_claim_with_ai(
     claim_content: str,
     source_platform: str = "unknown",
-    source_user: str = "unknown",
+    source_user: str = "unknown",   #determining risk for all categories
 ) -> Dict[str, Any]:
     """Analyse a short social-media claim or text snippet."""
 
-    system_msg = """You are a senior fact-checker assessing whether a piece of text contains
-actual misinformation. Your default posture is neutral — you do not assume claims are false.
+    system_msg = """You are a senior fact-checker assessing the risk level of a piece of text.
+Your job is to produce a nuanced, evidence-based risk score — not just 0 or 100.
+
+RISK SCORE SCALE — use the full 0-100 range:
+- 0-15:  Factual claim with named official source, fully verifiable, no manipulation.
+- 16-30: Mostly credible. Minor sourcing gaps but core claim is plausible and consistent.
+- 31-45: Mixed. Some unverified elements, vague sourcing, or minor misleading framing.
+- 46-60: Questionable. Unverified claims, missing context, or from an untrusted source
+         with no corroboration available.
+- 61-75: Likely false or manipulative. Demonstrably incorrect elements, heavy emotional
+         manipulation, or rumour presented as established fact.
+- 76-90: High risk. Deliberate misinformation, fabricated claims, conspiracy narrative,
+         or content designed to deceive.
+- 91-100: Critical. Dangerous misinformation posing direct safety risk, incitement,
+          or content that is both provably false AND immediately harmful.
+
+CLAIM TYPE SCORING GUIDANCE:
+- News report with named police/official/hospital source: 5-20
+- News report with no named source but plausible claims: 25-40
+- Social media post with verifiable external link: 30-50
+- Social media post with unverifiable claims: 45-65
+- Forwarded message with sensational unverified claim: 55-70
+- Conspiracy or pseudoscience claim: 65-85
+- Deliberate hoax or fabricated screenshot: 75-95
 
 HARD RULES:
-1. A news report of a road accident, crime, natural disaster, or death attributed to
-   a named official source (police, hospital, government) is a FACTUAL CLAIM with
-   LOW risk. Do not manufacture concerns about it.
-2. "manipulation_tactics" requires a SPECIFIC named tactic WITH a quoted example from
-   the text (e.g. "false urgency — 'ACT NOW or people will die'"). If no such tactic
-   exists, return []. An empty list is correct and expected for factual news reports.
-3. "emotional_triggers" means words deliberately chosen to bypass rational thinking
-   (e.g. propaganda slogans, dehumanising language). Words like "killed", "died",
-   "crash", "victims" are factual descriptions of tragic events — NOT emotional triggers.
-4. risk_score for a factual news report with an official/named source: 0-20.
-   risk_score above 40 requires specific quoted evidence of deception.
-5. Do NOT penalise a report for lacking information that was not yet available at time
-   of writing (e.g. full victim identities in a breaking news report).
-6. Respond with ONLY valid JSON — no markdown, no preamble."""
+1. You MUST pick a specific integer in the range that fits the evidence.
+   Do NOT default to 0 or 100 unless the content perfectly matches those
+   extreme definitions above.
+2. "manipulation_tactics" requires a SPECIFIC named tactic WITH a quoted example.
+   If no such tactic exists, return []. Empty list is correct for factual reports.
+3. "emotional_triggers" means words deliberately chosen to bypass rational thinking —
+   propaganda slogans, dehumanising language. Words like "killed", "died", "crash",
+   "victims" are factual descriptions — NOT emotional triggers.
+4. Do NOT penalise a report for lacking information not yet available at time of writing.
+5. Respond with ONLY valid JSON — no markdown, no preamble."""
 
     claim_snippet = claim_content[:2000]
 
@@ -776,9 +1101,7 @@ Return this JSON:
 
     if isinstance(result, GuardrailsViolation):
         logger.warning(f"[L2] LLM blocked stage={result.stage} cats={result.categories}")
-        print(f"[L2] LLM blocked stage={result.stage} cats={result.categories}")
-    else:
-        logger.debug(f"[L2] LLM output chars={len(result.content)} preview={result.content[:200]!r}")
+        print(f"[1048] LLM blocked stage={result.stage} cats={result.categories}")
         return {
             **base,
             "risk_score": 100,
@@ -796,6 +1119,9 @@ Return this JSON:
             "guardrails_blocked": True,
             "guard_violation": result.to_dict(),
         }
+    else:
+        print(f"[1067] LLM output chars={len(result.content)} preview={result.content[:100]!r}")
+        
 
     parsed = _parse_json(result.content)
 
@@ -1155,10 +1481,13 @@ async def analyze_url_content(
     Accepts input as query params (?url=...) OR as a JSON body.
     Paste-override: supply 'content' if the site blocks automated fetching.
     """
+    #print("Line number 1158: ", url_qp, analysis_type_qp, content_qp, request)
+
     resolved_url  = url_qp           or (request.url           if request else None)
     resolved_type = analysis_type_qp or (request.analysis_type if request else None) or "news_article"
     resolved_body = content_qp       or (request.content       if request else None)
 
+    #print("Line number 1164: ", resolved_url, resolved_type, len(resolved_body) if resolved_body else 0)
     if not resolved_url or not resolved_url.strip():
         raise HTTPException(status_code=422,
                             detail="'url' is required — pass it as ?url=... or in the JSON body.")
@@ -1166,7 +1495,7 @@ async def analyze_url_content(
     resolved_url = resolved_url.strip()
     is_credible, source_domain = is_credible_source(resolved_url)
 
-    print("Line number: 1068", resolved_body, is_credible, source_domain)
+    #print("Line number: 1068", resolved_body, is_credible, source_domain)
 
     if resolved_body and len(resolved_body.strip()) > 80:
         article = {

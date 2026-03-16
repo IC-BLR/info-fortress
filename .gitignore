@@ -21,3 +21,39 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+<<<<<<< HEAD
+=======
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+__MACOSX/
+.AppleDouble
+.LSOverride
+
+# Zipped files
+*.zip
+
+# Environment variables
+.env
+
+# VS Code (optional)
+.vscode/
+
+# Logs
+*.log
+
+info_lora/checkpoint-*/
+*.db
+*.db.wal
+*.duckdb
+__pycache__/
+optimizer.pt
+scheduler.pt
+rng_state.pth
+trainer_state.json
+training_args.bin

@@ -1,0 +1,6 @@
+FROM ./mistral_info_merged
+
+PARAMETER temperature 0.1
+PARAMETER top_p 0.9
+
+SYSTEM "You are INFO FORTRESS, an AI specialized in misinformation analysis."

@@ -1,0 +1,279 @@
+/* INFO FORTRESS - Main Application Styles */
+
+.app-container {
+    min-height: 100vh;
+    background-color: hsl(240 6% 4%);
+}
+
+/* Sidebar styles */
+.sidebar {
+    width: 240px;
+    min-height: 100vh;
+    background-color: hsl(240 6% 4%);
+    border-right: 1px solid hsl(240 4% 16%);
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 40;
+}
+
+.sidebar-collapsed {
+    width: 64px;
+}
+
+/* Main content area */
+.main-content {
+    margin-left: 240px;
+    min-height: 100vh;
+    background-image: 
+        linear-gradient(to right, rgba(128, 128, 128, 0.04) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(128, 128, 128, 0.04) 1px, transparent 1px);
+    background-size: 24px 24px;
+}
+
+.main-content-collapsed {
+    margin-left: 64px;
+}
+
+/* Header styles */
+.header-glass {
+    backdrop-filter: blur(12px);
+    background-color: hsla(240, 6%, 4%, 0.85);
+    border-bottom: 1px solid hsla(0, 0%, 100%, 0.05);
+}
+
+/* NRI Gauge styles */
+.nri-gauge-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.nri-value {
+    position: absolute;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 2.5rem;
+    font-weight: 700;
+}
+
+/* Card grid layouts */
+.bento-grid {
+    display: grid;
+    gap: 1rem;
+}
+
+.bento-grid-2 {
+    grid-template-columns: repeat(2, 1fr);
+}
+
+.bento-grid-3 {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.bento-grid-4 {
+    grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 1280px) {
+    .bento-grid-4 {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .bento-grid-3 {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .sidebar {
+        width: 64px;
+    }
+    .main-content {
+        margin-left: 64px;
+    }
+    .bento-grid-2,
+    .bento-grid-3,
+    .bento-grid-4 {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Claim card styles */
+.claim-card {
+    transition: all 0.2s ease;
+}
+
+.claim-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* Pattern type icons */
+.pattern-icon {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+}
+
+/* Velocity chart area */
+.velocity-chart {
+    height: 200px;
+}
+
+/* Table styles */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table th {
+    text-align: left;
+    padding: 0.75rem 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: hsl(240 4% 55%);
+    border-bottom: 1px solid hsl(240 4% 16%);
+}
+
+.data-table td {
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    border-bottom: 1px solid hsl(240 4% 12%);
+}
+
+.data-table tr:hover {
+    background-color: hsla(240, 4%, 16%, 0.3);
+}
+
+/* Alert banner styles */
+.alert-banner {
+    animation: slide-down 0.3s ease-out;
+}
+
+@keyframes slide-down {
+    from {
+        opacity: 0;
+        transform: translateY(-100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Loading skeleton */
+.skeleton {
+    background: linear-gradient(
+        90deg,
+        hsl(240 4% 14%) 25%,
+        hsl(240 4% 18%) 50%,
+        hsl(240 4% 14%) 75%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-loading 1.5s infinite;
+}
+
+@keyframes skeleton-loading {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* Tab styles */
+.tab-tactical {
+    position: relative;
+    padding: 0.75rem 1.5rem;
+    font-weight: 500;
+    color: hsl(240 4% 55%);
+    transition: all 0.2s ease;
+}
+
+.tab-tactical:hover {
+    color: hsl(0 0% 98%);
+}
+
+.tab-tactical.active {
+    color: hsl(0 0% 98%);
+}
+
+.tab-tactical.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: hsl(0 0% 98%);
+}
+
+/* Risk meter */
+.risk-meter {
+    height: 8px;
+    background-color: hsl(240 4% 14%);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.risk-meter-fill {
+    height: 100%;
+    transition: width 0.5s ease;
+}
+
+/* Pulse indicator */
+.pulse-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    position: relative;
+}
+
+.pulse-indicator::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    opacity: 0.3;
+    animation: pulse-ring 2s ease-out infinite;
+}
+
+@keyframes pulse-ring {
+    0% {
+        transform: scale(1);
+        opacity: 0.3;
+    }
+    100% {
+        transform: scale(1.5);
+        opacity: 0;
+    }
+}
+
+/* Status dot */
+.status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+}
+
+.status-dot-active {
+    background-color: hsl(142 71% 45%);
+    box-shadow: 0 0 8px hsl(142 71% 45%);
+}
+
+.status-dot-warning {
+    background-color: hsl(38 92% 50%);
+    box-shadow: 0 0 8px hsl(38 92% 50%);
+}
+
+.status-dot-danger {
+    background-color: hsl(0 84% 60%);
+    box-shadow: 0 0 8px hsl(0 84% 60%);
+}

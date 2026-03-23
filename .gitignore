@@ -26,3 +26,14 @@ __MACOSX/
 
 # Logs
 *.log
+
+model/
+/backend/model/
+models/
+checkpoints/
+lora/
+adapters/
+
+# LoRA checkpoints
+tinyllama-lora-output*
+backend/tinyllama-lora-output*

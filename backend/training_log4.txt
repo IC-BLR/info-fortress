@@ -1,0 +1,113 @@
+TinyLlama LoRA Training Log
+Started : 2026-03-20 15:57:42
+============================================================
+
+
+────────────────────────────────────────────────────────────
+  EPOCH ? started -- 15:57:44
+────────────────────────────────────────────────────────────
+  step     10 | train_loss 3.1883 | lr 6.00e-05 | grad_norm 0.7559
+  step     20 | train_loss 2.0956 | lr 1.27e-04 | grad_norm 0.6016
+  step     30 | train_loss 0.8029 | lr 1.93e-04 | grad_norm 0.2539
+  step     40 | train_loss 0.3630 | lr 2.00e-04 | grad_norm 0.3192
+  step     50 | train_loss 0.1870 | lr 1.99e-04 | grad_norm 0.1907
+  step     60 | train_loss 0.0920 | lr 1.97e-04 | grad_norm 0.1119
+
+  -- Epoch 1 Summary --
+  Avg train loss : 1.1215
+  Min train loss : 0.092
+  Total steps    : 63
+  Elapsed        : 62.8s  (1.0 min)
+  Timestamp      : 2026-03-20 15:58:47
+
+
+────────────────────────────────────────────────────────────
+  EPOCH 2 started -- 15:58:47
+────────────────────────────────────────────────────────────
+  step     70 | train_loss 0.0769 | lr 1.94e-04 | grad_norm 0.0853
+  step     80 | train_loss 0.0715 | lr 1.90e-04 | grad_norm 0.0719
+  step     90 | train_loss 0.0716 | lr 1.86e-04 | grad_norm 0.0614
+  step    100 | train_loss 0.0669 | lr 1.81e-04 | grad_norm 0.0579
+  step    110 | train_loss 0.0672 | lr 1.76e-04 | grad_norm 0.0677
+  step    120 | train_loss 0.0684 | lr 1.69e-04 | grad_norm 0.0520
+
+  -- Epoch 2 Summary --
+  Avg train loss : 0.0704
+  Min train loss : 0.0669
+  Total steps    : 126
+  Elapsed        : 63.4s  (1.1 min)
+  Timestamp      : 2026-03-20 15:59:51
+
+
+────────────────────────────────────────────────────────────
+  EPOCH 3 started -- 15:59:51
+────────────────────────────────────────────────────────────
+  step    130 | train_loss 0.0656 | lr 1.63e-04 | grad_norm 0.0671
+  step    140 | train_loss 0.0650 | lr 1.55e-04 | grad_norm 0.0510
+  step    150 | train_loss 0.0644 | lr 1.48e-04 | grad_norm 0.0510
+  step    160 | train_loss 0.0651 | lr 1.40e-04 | grad_norm 0.0385
+  step    170 | train_loss 0.0657 | lr 1.31e-04 | grad_norm 0.0556
+  step    180 | train_loss 0.0635 | lr 1.22e-04 | grad_norm 0.0537
+
+  -- Epoch 3 Summary --
+  Avg train loss : 0.0649
+  Min train loss : 0.0635
+  Total steps    : 189
+  Elapsed        : 62.1s  (1.0 min)
+  Timestamp      : 2026-03-20 16:00:53
+
+
+────────────────────────────────────────────────────────────
+  EPOCH 4 started -- 16:00:53
+────────────────────────────────────────────────────────────
+  step    190 | train_loss 0.0651 | lr 1.14e-04 | grad_norm 0.0340
+  step    200 | train_loss 0.0632 | lr 1.05e-04 | grad_norm 0.0509
+  step    210 | train_loss 0.0634 | lr 9.55e-05 | grad_norm 0.0330
+  step    220 | train_loss 0.0643 | lr 8.65e-05 | grad_norm 0.0573
+  step    230 | train_loss 0.0634 | lr 7.76e-05 | grad_norm 0.0445
+  step    240 | train_loss 0.0635 | lr 6.89e-05 | grad_norm 0.0562
+  step    250 | train_loss 0.0644 | lr 6.05e-05 | grad_norm 0.0568
+
+  -- Epoch 4 Summary --
+  Avg train loss : 0.0639
+  Min train loss : 0.0632
+  Total steps    : 252
+  Elapsed        : 62.1s  (1.0 min)
+  Timestamp      : 2026-03-20 16:01:55
+
+
+────────────────────────────────────────────────────────────
+  EPOCH 5 started -- 16:01:56
+────────────────────────────────────────────────────────────
+  step    260 | train_loss 0.0627 | lr 5.24e-05 | grad_norm 0.0302
+  step    270 | train_loss 0.0628 | lr 4.46e-05 | grad_norm 0.0390
+  step    280 | train_loss 0.0629 | lr 3.73e-05 | grad_norm 0.0360
+  step    290 | train_loss 0.0631 | lr 3.06e-05 | grad_norm 0.0399
+  step    300 | train_loss 0.0618 | lr 2.44e-05 | grad_norm 0.0477
+  step    310 | train_loss 0.0631 | lr 1.88e-05 | grad_norm 0.0522
+
+  -- Epoch 5 Summary --
+  Avg train loss : 0.0627
+  Min train loss : 0.0618
+  Total steps    : 315
+  Elapsed        : 62.7s  (1.0 min)
+  Timestamp      : 2026-03-20 16:02:58
+
+
+────────────────────────────────────────────────────────────
+  EPOCH 6 started -- 16:02:58
+────────────────────────────────────────────────────────────
+  step    320 | train_loss 0.0627 | lr 1.39e-05 | grad_norm 0.0534
+  step    330 | train_loss 0.0619 | lr 9.63e-06 | grad_norm 0.0431
+  step    340 | train_loss 0.0625 | lr 6.13e-06 | grad_norm 0.0411
+  step    350 | train_loss 0.0611 | lr 3.41e-06 | grad_norm 0.0372
+  step    360 | train_loss 0.0622 | lr 1.47e-06 | grad_norm 0.0465
+  step    370 | train_loss 0.0623 | lr 3.30e-07 | grad_norm 0.0450
+
+  -- Epoch 6 Summary --
+  Avg train loss : 0.0621
+  Min train loss : 0.0611
+  Total steps    : 378
+  Elapsed        : 62.0s  (1.0 min)
+  Timestamp      : 2026-03-20 16:04:00
+
